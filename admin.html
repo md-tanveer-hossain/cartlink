@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Canteen Admin: Stock Manager</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+</head>
+<body class="bg-amber-50 min-h-screen flex flex-col items-center p-6 font-sans">
+
+    <h1 id="admin-header" class="text-2xl font-bold mb-6 bg-yellow-500 px-6 py-3 rounded-xl shadow-sm">
+        Admin: Loading...
+    </h1>
+
+    <!-- Login Button (Shown when signed out) -->
+    <button id="login-btn" onclick="login()" class="bg-gray-900 text-white font-bold px-6 py-3 rounded-xl shadow">
+        Sign in with Google
+    </button>
+
+    <!-- Admin Dashboard (Hidden until signed in) -->
+    <div id="admin-panel" class="hidden w-full max-w-md space-y-6">
+        <div class="flex justify-between items-center text-sm text-gray-600 px-1">
+            <span id="user-email"></span>
+            <button onclick="logout()" class="text-red-600 font-semibold">Sign Out</button>
+        </div>
+
+        <!-- Add New Item Form -->
+        <div class="bg-white p-4 rounded-xl shadow space-y-3">
+            <h2 class="font-bold text-lg">Add New Item</h2>
+            <div class="flex gap-2">
+                <input id="item-name" type="text" placeholder="Item name (e.g. Egg Roll)" class="border rounded-lg px-3 py-2 w-2/3 text-sm">
+                <input id="item-price" type="number" placeholder="₹ Price" class="border rounded-lg px-3 py-2 w-1/3 text-sm">
+            </div>
+            <!-- NEW: Optional Image URL Input -->
+            <input id="item-image" type="url" placeholder="Image URL (optional - Copy image address)" class="border rounded-lg px-3 py-2 w-full text-sm">
+            <button onclick="addItem()" class="w-full bg-gray-900 text-white py-2 rounded-lg font-semibold text-sm">
+                + Add to Menu
+            </button>
+        </div>
+
+        <!-- Live Auto-Rendered Menu List -->
+        <div id="menu-list" class="space-y-3"></div>
+    </div>
+
+    <!-- Status / Error Message (Outside #admin-panel so login errors are visible) -->
+    <p id="status" class="mt-4 text-center text-sm font-medium text-gray-700"></p>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/13.4.0/firebase-app.js";
+        import { initializeFirestore, doc, collection, setDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/13.4.0/firebase-firestore.js";
+        import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/13.4.0/firebase-auth.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyDvqlnO0xmDVMrFqptfZzTv1N_fF63bRLM",
+            authDomain: "cu-canteen-5e3bd.firebaseapp.com",
+            projectId: "cu-canteen-5e3bd",
+            storageBucket: "cu-canteen-5e3bd.firebasestorage.app",
+            messagingSenderId: "916542590125",
+            appId: "1:916542590125:web:c8998392afc6f8d25b8a24"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = initializeFirestore(app, { experimentalForceLongPolling: true });
+        const auth = getAuth(app);
+        const provider = new GoogleAuthProvider();
+
+        const params = new URLSearchParams(window.location.search);
+        const shopId = params.get("shop") || "cu-canteen";
+        document.getElementById("admin-header").textContent = `Admin: ${shopId}`;
+
+        const statusEl = document.getElementById("status");
+
+        window.login = () => {
+            signInWithPopup(auth, provider).catch((err) => {
+                statusEl.textContent = "Login Error: " + err.code;
+            });
+        };
+
+        window.logout = () => signOut(auth);
+
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                document.getElementById("login-btn").classList.add("hidden");
+                document.getElementById("admin-panel").classList.remove("hidden");
+                document.getElementById("user-email").textContent = "Logged in as: " + user.email;
+                statusEl.textContent = "";
+                listenToMenu();
+            } else {
+                document.getElementById("login-btn").classList.remove("hidden");
+                document.getElementById("admin-panel").classList.add("hidden");
+            }
+        });
+
+        // Add Item with Optional imageUrl
+        window.addItem = async () => {
+            const name = document.getElementById("item-name").value.trim();
+            const price = parseInt(document.getElementById("item-price").value);
+            const imageUrl = document.getElementById("item-image").value.trim();
+
+            if (!name || isNaN(price) || price <= 0) {
+                statusEl.textContent = "Enter a valid item name and price.";
+                return;
+            }
+
+            const id = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+            try {
+                await setDoc(doc(db, "shops", shopId, "menu", id), {
+                    name: name,
+                    price: price,
+                    inStock: true,
+                    imageUrl: imageUrl
+                });
+                document.getElementById("item-name").value = "";
+                document.getElementById("item-price").value = "";
+                document.getElementById("item-image").value = "";
+                statusEl.textContent = `Added ${name}!`;
+            } catch (err) {
+                statusEl.textContent = "Error: " + err.code;
+            }
+        };
+
+        window.setStock = async (itemId, state) => {
+            try {
+                await setDoc(doc(db, "shops", shopId, "menu", itemId), { inStock: state }, { merge: true });
+                statusEl.textContent = `Updated ${itemId}: ${state ? "In Stock" : "Out of Stock"}`;
+            } catch (err) {
+                statusEl.textContent = "Error: " + err.code;
+            }
+        };
+
+        window.removeItem = async (itemId) => {
+            try {
+                await deleteDoc(doc(db, "shops", shopId, "menu", itemId));
+                statusEl.textContent = `Deleted ${itemId}`;
+            } catch (err) {
+                statusEl.textContent = "Error: " + err.code;
+            }
+        };
+
+        function listenToMenu() {
+            onSnapshot(collection(db, "shops", shopId, "menu"), (snapshot) => {
+                const list = document.getElementById("menu-list");
+                list.innerHTML = "";
+                snapshot.forEach((docSnap) => {
+                    const id = docSnap.id;
+                    const data = docSnap.data();
+                    const imgTag = data.imageUrl ? `<img src="${data.imageUrl}" onerror="this.style.display='none'" class="w-10 h-10 rounded-lg object-cover">` : "";
+
+                    list.innerHTML += `
+                        <div class="bg-white p-4 rounded-xl shadow flex justify-between items-center">
+                            <div class="flex items-center gap-3">
+                                ${imgTag}
+                                <div>
+                                    <p class="font-bold">${data.name} <span class="text-sm font-normal text-gray-500">₹${data.price}</span></p>
+                                    <p class="text-xs font-semibold ${data.inStock ? "text-green-600" : "text-red-500"}">
+                                        ${data.inStock ? "● In Stock" : "● Out of Stock"}
+                                    </p>
+                                </div>
+                            </div>
+                            <div class="flex gap-2">
+                                <button onclick="setStock('${id}', true)" class="bg-green-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold">In</button>
+                                <button onclick="setStock('${id}', false)" class="bg-red-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold">Out</button>
+                                <button onclick="removeItem('${id}')" class="bg-gray-200 text-gray-700 px-2.5 py-1.5 rounded-lg text-xs font-bold">✕</button>
+                            </div>
+                        </div>
+                    `;
+                });
+            });
+        }
+    </script>
+</body>
+</html>
