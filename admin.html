@@ -3,51 +3,74 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Canteen Admin: Stock Manager</title>
+    <title>CartLink Admin — Store Manager</title>
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
 </head>
-<body class="bg-amber-50 min-h-screen flex flex-col items-center p-6 font-sans">
+<body class="bg-amber-50 min-h-screen flex flex-col items-center p-6 font-sans"
+      style="background-image: radial-gradient(rgba(217, 119, 6, 0.18) 1px, transparent 1px); background-size: 20px 20px;">
 
-    <h1 id="admin-header" class="text-2xl font-bold mb-6 bg-yellow-500 px-6 py-3 rounded-xl shadow-sm">
-        Admin: Loading...
-    </h1>
+    <div class="w-full max-w-md flex justify-between items-center bg-yellow-500 px-5 py-3 rounded-xl shadow-sm mb-6">
+        <h1 id="admin-header" class="text-xl font-bold truncate">Admin: Loading...</h1>
+        <a href="onboarding.html" class="text-xs font-bold bg-black/10 hover:bg-black/20 px-2.5 py-1 rounded-lg shrink-0">My Stores</a>
+    </div>
 
     <!-- Login Button (Shown when signed out) -->
-    <button id="login-btn" onclick="login()" class="bg-gray-900 text-white font-bold px-6 py-3 rounded-xl shadow">
+    <button id="login-btn" onclick="login()" class="bg-gray-900 hover:bg-black text-white font-bold px-6 py-3 rounded-xl shadow">
         Sign in with Google
     </button>
 
-    <!-- Admin Dashboard (Hidden until signed in) -->
-    <div id="admin-panel" class="hidden w-full max-w-md space-y-6">
-        <div class="flex justify-between items-center text-sm text-gray-600 px-1">
+    <!-- Admin Dashboard (Hidden until signed in & verified) -->
+    <div id="admin-panel" class="hidden w-full max-w-md space-y-5">
+        <div class="flex justify-between items-center text-xs text-gray-600 px-1">
             <span id="user-email"></span>
             <button onclick="logout()" class="text-red-600 font-semibold">Sign Out</button>
+        </div>
+
+        <!-- Share Storefront & QR Card -->
+        <div class="bg-white p-4 rounded-xl shadow border border-amber-200 space-y-3">
+            <div class="flex justify-between items-center">
+                <h2 class="font-bold text-sm text-gray-900">Your Live Storefront Link</h2>
+                <a id="open-store-link" href="#" target="_blank" class="text-xs font-bold text-blue-600 hover:underline">Open Store ↗</a>
+            </div>
+            <div class="flex gap-2">
+                <input id="store-url-input" type="text" readonly class="w-full bg-gray-50 border border-gray-300 rounded-lg px-3 py-2 text-xs font-mono text-gray-700">
+                <button id="copy-btn" onclick="copyStoreLink()" class="bg-gray-900 hover:bg-black text-white font-bold px-4 py-2 rounded-lg text-xs shrink-0">
+                    Copy
+                </button>
+            </div>
+            <div class="flex items-center justify-between pt-2 border-t border-gray-100">
+                <div class="text-xs text-gray-600">
+                    <p class="font-semibold text-gray-800">Store QR Code</p>
+                    <p class="text-[11px] text-gray-500">Print for counter or share on stories</p>
+                    <a id="download-qr-link" href="#" target="_blank" class="inline-block mt-1.5 text-amber-800 font-bold underline">Open Full-Res QR →</a>
+                </div>
+                <img id="store-qr-img" src="" alt="Store QR" class="w-16 h-16 border rounded-lg p-0.5">
+            </div>
         </div>
 
         <!-- Add New Item Form -->
         <div class="bg-white p-4 rounded-xl shadow space-y-3">
             <h2 class="font-bold text-lg">Add New Item</h2>
             <div class="flex gap-2">
-                <input id="item-name" type="text" placeholder="Item name (e.g. Egg Roll)" class="border rounded-lg px-3 py-2 w-2/3 text-sm">
+                <input id="item-name" type="text" placeholder="Item name (e.g. Chocolate Brownie)" class="border rounded-lg px-3 py-2 w-2/3 text-sm">
                 <input id="item-price" type="number" placeholder="₹ Price" class="border rounded-lg px-3 py-2 w-1/3 text-sm">
             </div>
-            <!-- NEW: Optional Image URL Input -->
             <input id="item-image" type="url" placeholder="Image URL (optional - Copy image address)" class="border rounded-lg px-3 py-2 w-full text-sm">
-            <button onclick="addItem()" class="w-full bg-gray-900 text-white py-2 rounded-lg font-semibold text-sm">
-                + Add to Menu
+            <button onclick="addItem()" class="w-full bg-gray-900 hover:bg-black text-white py-2.5 rounded-lg font-semibold text-sm">
+                + Add to Catalog
             </button>
         </div>
 
-        <!-- Live Auto-Rendered Menu List -->
+        <!-- Live Auto-Rendered Catalog List -->
         <div id="menu-list" class="space-y-3"></div>
     </div>
 
-    <!-- Status / Error Message (Outside #admin-panel so login errors are visible) -->
-    <p id="status" class="mt-4 text-center text-sm font-medium text-gray-700"></p>
+    <!-- Status / Error Message -->
+    <p id="status" class="mt-4 text-center text-sm font-medium text-gray-700 max-w-md"></p>
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/13.4.0/firebase-app.js";
-        import { initializeFirestore, doc, collection, setDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/13.4.0/firebase-firestore.js";
+        import { initializeFirestore, doc, getDoc, collection, setDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/13.4.0/firebase-firestore.js";
         import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/13.4.0/firebase-auth.js";
 
         const firebaseConfig = {
@@ -59,16 +82,38 @@
             appId: "1:916542590125:web:c8998392afc6f8d25b8a24"
         };
 
+        const params = new URLSearchParams(window.location.search);
+        const shopId = params.get("shop");
+
+        // Redirect to onboarding if no store slug is specified
+        if (!shopId) {
+            window.location.href = "onboarding.html";
+        }
+
         const app = initializeApp(firebaseConfig);
         const db = initializeFirestore(app, { experimentalForceLongPolling: true });
         const auth = getAuth(app);
         const provider = new GoogleAuthProvider();
 
-        const params = new URLSearchParams(window.location.search);
-        const shopId = params.get("shop") || "cu-canteen";
         document.getElementById("admin-header").textContent = `Admin: ${shopId}`;
-
         const statusEl = document.getElementById("status");
+
+        // Build clean public storefront URL dynamically from current path
+        const basePath = window.location.href.split("admin.html")[0];
+        const publicStoreUrl = `${basePath}?shop=${encodeURIComponent(shopId)}`;
+        const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(publicStoreUrl)}`;
+
+        document.getElementById("store-url-input").value = publicStoreUrl;
+        document.getElementById("open-store-link").href = publicStoreUrl;
+        document.getElementById("store-qr-img").src = qrCodeUrl;
+        document.getElementById("download-qr-link").href = qrCodeUrl;
+
+        window.copyStoreLink = () => {
+            navigator.clipboard.writeText(publicStoreUrl);
+            const btn = document.getElementById("copy-btn");
+            btn.textContent = "Copied!";
+            setTimeout(() => (btn.textContent = "Copy"), 1800);
+        };
 
         window.login = () => {
             signInWithPopup(auth, provider).catch((err) => {
@@ -78,20 +123,38 @@
 
         window.logout = () => signOut(auth);
 
-        onAuthStateChanged(auth, (user) => {
-            if (user) {
-                document.getElementById("login-btn").classList.add("hidden");
-                document.getElementById("admin-panel").classList.remove("hidden");
-                document.getElementById("user-email").textContent = "Logged in as: " + user.email;
-                statusEl.textContent = "";
-                listenToMenu();
-            } else {
+        onAuthStateChanged(auth, async (user) => {
+            if (!user) {
                 document.getElementById("login-btn").classList.remove("hidden");
                 document.getElementById("admin-panel").classList.add("hidden");
+                return;
+            }
+
+            document.getElementById("login-btn").classList.add("hidden");
+            document.getElementById("user-email").textContent = "Logged in as: " + user.email;
+
+            try {
+                const shopSnap = await getDoc(doc(db, "shops", shopId));
+                if (!shopSnap.exists()) {
+                    statusEl.textContent = `Store "${shopId}" does not exist. Create it from My Stores.`;
+                    return;
+                }
+
+                const shopData = shopSnap.data();
+                if (shopData.adminUid !== user.uid) {
+                    statusEl.textContent = `Access Denied: You signed in as ${user.email}, which does not own "${shopData.name}".`;
+                    return;
+                }
+
+                document.getElementById("admin-header").textContent = `Admin: ${shopData.name}`;
+                document.getElementById("admin-panel").classList.remove("hidden");
+                statusEl.textContent = "";
+                listenToMenu();
+            } catch (err) {
+                statusEl.textContent = "Error loading store: " + err.code;
             }
         });
 
-        // Add Item with Optional imageUrl
         window.addItem = async () => {
             const name = document.getElementById("item-name").value.trim();
             const price = parseInt(document.getElementById("item-price").value);

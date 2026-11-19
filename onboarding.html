@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Launch Your Store — CartLink</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+</head>
+<body class="bg-amber-50 min-h-screen flex flex-col items-center justify-center p-4 font-sans"
+      style="background-image: radial-gradient(rgba(217, 119, 6, 0.18) 1px, transparent 1px); background-size: 20px 20px;">
+
+    <div class="w-full max-w-md bg-white rounded-2xl shadow-md p-6 border border-amber-200">
+        <div class="flex justify-between items-center mb-4">
+            <a href="index.html" class="text-xl font-extrabold text-gray-900">CartLink</a>
+            <span id="user-badge" class="text-xs text-gray-500">Not signed in</span>
+        </div>
+
+        <!-- Step 1: Google Sign-In -->
+        <div id="auth-box" class="text-center py-6">
+            <h1 class="text-2xl font-bold text-gray-900 mb-2">Launch your online store</h1>
+            <p class="text-sm text-gray-600 mb-6">Sign in with Google to create or manage your CartLink storefront.</p>
+            <button onclick="login()" class="w-full bg-gray-900 hover:bg-black text-white font-bold py-3 rounded-xl shadow">
+                Continue with Google
+            </button>
+        </div>
+
+        <!-- Step 2: Existing Stores + Create New Store Form -->
+        <div id="setup-box" class="hidden">
+            <div id="my-stores-section" class="hidden mb-6">
+                <h2 class="text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">Your Existing Stores</h2>
+                <div id="my-stores-list" class="space-y-2"></div>
+                <hr class="my-5 border-gray-200">
+            </div>
+
+            <h2 class="text-lg font-bold text-gray-900 mb-3">Create a New Store</h2>
+            <div class="space-y-3">
+                <div>
+                    <label class="block text-xs font-bold text-gray-700 mb-1">Store / Business Name</label>
+                    <input id="shop-name" type="text" oninput="autoSlug()" placeholder="e.g. Baked by Riya"
+                           class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-gray-700 mb-1">Store URL Slug (unique ID)</label>
+                    <input id="shop-slug" type="text" placeholder="e.g. baked-by-riya"
+                           class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono bg-gray-50">
+                    <p class="text-[11px] text-gray-500 mt-1">Link will be: <span id="preview-url" class="font-mono">.../cartlink/?shop=your-store</span></p>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-gray-700 mb-1">Your UPI ID (for direct QR payments)</label>
+                    <input id="shop-upi" type="text" placeholder="e.g. yourname@oksbi"
+                           class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-gray-700 mb-1">WhatsApp Number (with 91 country code)</label>
+                    <input id="shop-wa" type="tel" placeholder="e.g. 919876543210"
+                           class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                </div>
+
+                <p id="error-msg" class="hidden text-xs text-red-600 font-semibold"></p>
+
+                <button id="create-btn" onclick="createStore()" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-xl shadow mt-2">
+                    Launch Store &amp; Add Items →
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/13.4.0/firebase-app.js";
+        import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/13.4.0/firebase-auth.js";
+        import { initializeFirestore, doc, getDoc, setDoc, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/13.4.0/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyDvqlnO0xmDVMrFqptfZzTv1N_fF63bRLM",
+            authDomain: "cu-canteen-5e3bd.firebaseapp.com",
+            projectId: "cu-canteen-5e3bd",
+            storageBucket: "cu-canteen-5e3bd.firebasestorage.app",
+            messagingSenderId: "916542590125",
+            appId: "1:916542590125:web:c8998392afc6f8d25b8a24"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = initializeFirestore(app, { experimentalForceLongPolling: true });
+
+        window.login = () => signInWithPopup(auth, new GoogleAuthProvider());
+
+        window.autoSlug = () => {
+            const name = document.getElementById("shop-name").value;
+            const slug = name.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+            document.getElementById("shop-slug").value = slug;
+            document.getElementById("preview-url").textContent = `.../cartlink/?shop=${slug || "your-store"}`;
+        };
+
+        onAuthStateChanged(auth, async (user) => {
+            if (!user) return;
+            document.getElementById("user-badge").textContent = user.email;
+            document.getElementById("auth-box").classList.add("hidden");
+            document.getElementById("setup-box").classList.remove("hidden");
+
+            // Load any stores already owned by this user
+            const q = query(collection(db, "shops"), where("adminUid", "==", user.uid));
+            const snap = await getDocs(q);
+            if (!snap.empty) {
+                const list = document.getElementById("my-stores-list");
+                list.innerHTML = "";
+                snap.forEach((docSnap) => {
+                    const s = docSnap.data();
+                    list.innerHTML += `
+                        <a href="admin.html?shop=${docSnap.id}" class="flex justify-between items-center bg-amber-50 hover:bg-amber-100 border border-amber-200 px-3 py-2.5 rounded-lg">
+                            <div>
+                                <p class="font-bold text-sm text-gray-900">${s.name}</p>
+                                <p class="text-xs text-gray-500 font-mono">?shop=${docSnap.id}</p>
+                            </div>
+                            <span class="text-xs font-bold text-amber-900">Open Admin →</span>
+                        </a>`;
+                });
+                document.getElementById("my-stores-section").classList.remove("hidden");
+            }
+        });
+
+        window.createStore = async () => {
+            const user = auth.currentUser;
+            if (!user) return;
+
+            const name = document.getElementById("shop-name").value.trim();
+            const slug = document.getElementById("shop-slug").value.trim().toLowerCase().replace(/[^a-z0-9-]/g, "");
+            const upiId = document.getElementById("shop-upi").value.trim();
+            const whatsapp = document.getElementById("shop-wa").value.replace(/\D/g, "");
+            const errEl = document.getElementById("error-msg");
+            const btn = document.getElementById("create-btn");
+
+            errEl.classList.add("hidden");
+
+            if (!name || !slug || !upiId || whatsapp.length < 10) {
+                errEl.textContent = "Please fill in all 4 fields properly (include 91 before your WhatsApp number).";
+                errEl.classList.remove("hidden");
+                return;
+            }
+
+            btn.disabled = true;
+            btn.textContent = "Creating Store...";
+
+            try {
+                const shopRef = doc(db, "shops", slug);
+                const existing = await getDoc(shopRef);
+                if (existing.exists()) {
+                    errEl.textContent = `The link "${slug}" is already taken. Try adding a number or city (e.g. ${slug}-kol).`;
+                    errEl.classList.remove("hidden");
+                    btn.disabled = false;
+                    btn.textContent = "Launch Store & Add Items →";
+                    return;
+                }
+
+                await setDoc(shopRef, {
+                    name,
+                    upiId,
+                    whatsapp,
+                    adminUid: user.uid
+                });
+
+                window.location.href = `admin.html?shop=${slug}`;
+            } catch (err) {
+                errEl.textContent = "Error creating store: " + err.message;
+                errEl.classList.remove("hidden");
+                btn.disabled = false;
+                btn.textContent = "Launch Store & Add Items →";
+            }
+        };
+    </script>
+</body>
+</html>

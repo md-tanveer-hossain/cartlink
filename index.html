@@ -3,16 +3,50 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Campus Canteen</title>
+    <title>CartLink — Zero-Commission Micro-Storefronts</title>
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
 </head>
 
 <body class="bg-amber-50 text-black min-h-screen"
       style="background-image: radial-gradient(rgba(217, 119, 6, 0.18) 1px, transparent 1px); background-size: 20px 20px;">
-    <div class="max-w-md mx-auto p-4 pb-28">
-        <h1 id="shop-header" class="text-2xl font-bold mb-4 bg-yellow-500 rounded-lg p-4 shadow-sm">Loading Menu...</h1>
 
-        <!-- Dynamic Menu Items Render Here -->
+    <!-- SaaS Landing Screen (Shown when no ?shop= parameter is provided) -->
+    <div id="landing-view" class="hidden max-w-md mx-auto p-6 min-h-screen flex flex-col justify-center">
+        <div class="bg-white rounded-2xl shadow-md p-6 border border-amber-200">
+            <span class="inline-block bg-yellow-400 text-black text-xs font-extrabold px-2.5 py-1 rounded-full uppercase tracking-wide mb-3">
+                Zero Commission • Instant Setup
+            </span>
+            <h1 class="text-3xl font-extrabold tracking-tight text-gray-900">CartLink</h1>
+            <p class="text-gray-600 mt-2 text-sm leading-relaxed">
+                Turn your menu or catalog into a shareable ordering link with built-in <strong>UPI QR checkout</strong>, live stock toggles, and itemized <strong>WhatsApp receipts</strong>.
+            </p>
+
+            <div class="mt-5 space-y-2 text-sm text-gray-700">
+                <p>✓ 0% platform fees — UPI goes straight to your bank</p>
+                <p>✓ Customers order in 10 seconds with no app download</p>
+                <p>✓ Built for cloud kitchens, bakers, stalls &amp; IG shops</p>
+            </div>
+
+            <div class="mt-6 flex flex-col gap-3">
+                <a href="onboarding.html" class="w-full text-center bg-gray-900 hover:bg-black text-white font-bold py-3 rounded-xl shadow">
+                    Create Your Store (60 Sec) →
+                </a>
+                <a href="?shop=test-stall" class="w-full text-center bg-amber-100 hover:bg-amber-200 text-amber-900 font-bold py-2.5 rounded-xl text-sm">
+                    Try Live Demo Store
+                </a>
+            </div>
+        </div>
+        <p class="text-center text-xs text-gray-500 mt-4">Already have a store? <a href="onboarding.html" class="underline font-semibold">Manage Dashboard</a></p>
+    </div>
+
+    <!-- Storefront View (Shown when ?shop= is provided) -->
+    <div id="store-view" class="hidden max-w-md mx-auto p-4 pb-28">
+        <div class="bg-yellow-500 rounded-lg p-4 shadow-sm mb-4 flex justify-between items-center">
+            <h1 id="shop-header" class="text-2xl font-bold">Loading Store...</h1>
+            <a href="index.html" class="text-xs font-bold bg-black/10 px-2 py-1 rounded">CartLink</a>
+        </div>
+
+        <!-- Dynamic Items Render Here -->
         <div id="menu-container"></div>
 
         <!-- Hidden QR Box (Appears when Pay is clicked) -->
@@ -49,162 +83,183 @@
             appId: "1:916542590125:web:c8998392afc6f8d25b8a24"
         };
 
-        const app = initializeApp(firebaseConfig);
-        const db = initializeFirestore(app, { experimentalForceLongPolling: true });
-
         const params = new URLSearchParams(window.location.search);
-        const shopId = params.get("shop") || "cu-canteen";
+        const shopId = params.get("shop");
 
-        let shopConfig = { name: "CU Canteen", upiId: "ghoshrupayan0@oksbi", whatsapp: "917980734030" };
-        let menuItems = {};
-        let currentOrderId = "";
+        if (!shopId) {
+            document.getElementById("landing-view").classList.remove("hidden");
+        } else {
+            document.getElementById("store-view").classList.remove("hidden");
 
-        async function loadShopInfo() {
-            try {
-                const shopSnap = await getDoc(doc(db, "shops", shopId));
-                if (shopSnap.exists()) {
-                    shopConfig = { ...shopConfig, ...shopSnap.data() };
+            const app = initializeApp(firebaseConfig);
+            const db = initializeFirestore(app, { experimentalForceLongPolling: true });
+
+            let shopConfig = null;
+            let menuItems = {};
+            let currentOrderId = "";
+
+            async function loadShopInfo() {
+                try {
+                    const shopSnap = await getDoc(doc(db, "shops", shopId));
+                    if (!shopSnap.exists()) {
+                        document.getElementById("shop-header").textContent = "Store Not Found";
+                        document.getElementById("menu-container").innerHTML = `
+                            <div class="bg-white p-5 rounded-xl shadow text-center">
+                                <p class="text-gray-600 text-sm mb-3">No store exists at <strong>?shop=${shopId}</strong>.</p>
+                                <a href="onboarding.html" class="inline-block bg-gray-900 text-white font-bold px-4 py-2 rounded-lg text-sm">Claim This Store Link</a>
+                            </div>`;
+                        return;
+                    }
+                    shopConfig = shopSnap.data();
+                    document.title = `${shopConfig.name} — CartLink`;
+                    document.getElementById("shop-header").textContent = shopConfig.name;
+                } catch (err) {
+                    document.getElementById("shop-header").textContent = "Store Error: " + err.code;
                 }
-                document.title = shopConfig.name;
-                document.getElementById("shop-header").textContent = shopConfig.name;
-            } catch (err) {
-                document.getElementById("shop-header").textContent = "Shop Error: " + err.code;
             }
-        }
-        loadShopInfo();
+            loadShopInfo();
 
-        onSnapshot(
-            collection(db, "shops", shopId, "menu"),
-            (snapshot) => {
-                const container = document.getElementById("menu-container");
-                container.innerHTML = "";
-                const activeIds = new Set();
+            onSnapshot(
+                collection(db, "shops", shopId, "menu"),
+                (snapshot) => {
+                    const container = document.getElementById("menu-container");
+                    if (snapshot.empty) {
+                        container.innerHTML = `<p class="text-center text-gray-500 text-sm bg-white p-4 rounded-xl shadow">No items added yet. Check back soon!</p>`;
+                        return;
+                    }
 
-                snapshot.forEach((docSnap) => {
-                    const id = docSnap.id;
-                    const data = docSnap.data();
-                    activeIds.add(id);
+                    container.innerHTML = "";
+                    const activeIds = new Set();
 
-                    const prevQty = menuItems[id] ? menuItems[id].qty : 0;
-                    const safeQty = data.inStock ? prevQty : 0;
+                    snapshot.forEach((docSnap) => {
+                        const id = docSnap.id;
+                        const data = docSnap.data();
+                        activeIds.add(id);
 
-                    // NEW: Prefer pasted imageUrl, fallback to local images/{id}.jpg
-                    const imgTag = data.imageUrl ? `<img src="${data.imageUrl}" onerror="this.style.display='none'" class="w-10 h-10 rounded-lg object-cover">` : "";
+                        const prevQty = menuItems[id] ? menuItems[id].qty : 0;
+                        const safeQty = data.inStock ? prevQty : 0;
 
-                    menuItems[id] = {
-                        name: data.name,
-                        price: data.price,
-                        inStock: data.inStock,
-                        qty: safeQty
-                    };
+                        const imgTag = data.imageUrl
+                            ? `<img src="${data.imageUrl}" onerror="this.style.display='none'" class="w-12 h-12 rounded-lg object-cover">`
+                            : "";
 
-                    container.innerHTML += `
-                        <div class="bg-white rounded-xl shadow p-4 mb-3 flex justify-between items-center">
-                            <div class="flex items-center gap-3">
-                                ${imgTag}
-                                <div>
-                                    <h2 class="font-bold text-lg text-green-600">${data.name}</h2>
-                                    <p class="text-green-600 font-medium">₹${data.price}</p>
+                        menuItems[id] = {
+                            name: data.name,
+                            price: data.price,
+                            inStock: data.inStock,
+                            qty: safeQty
+                        };
+
+                        container.innerHTML += `
+                            <div class="bg-white rounded-xl shadow p-4 mb-3 flex justify-between items-center">
+                                <div class="flex items-center gap-3">
+                                    ${imgTag}
+                                    <div>
+                                        <h2 class="font-bold text-lg text-gray-900">${data.name}</h2>
+                                        <p class="text-green-600 font-semibold">₹${data.price}</p>
+                                    </div>
+                                </div>
+                                <div class="flex items-center gap-3">
+                                    <button onclick="updateQty('${id}', -1)" class="bg-gray-200 px-3 py-1 rounded-lg font-bold">-</button>
+                                    <span id="${id}-qty" class="font-bold">${safeQty}</span>
+                                    <button onclick="updateQty('${id}', 1)" ${!data.inStock ? "disabled" : ""}
+                                        class="${data.inStock ? "bg-green-600" : "bg-gray-400 cursor-not-allowed"} text-white px-3 py-1 rounded-lg font-bold">
+                                        ${data.inStock ? "+" : "Sold Out"}
+                                    </button>
                                 </div>
                             </div>
-                            <div class="flex items-center gap-3">
-                                <button onclick="updateQty('${id}', -1)" class="bg-gray-200 px-3 py-1 rounded-lg font-bold">-</button>
-                                <span id="${id}-qty" class="font-bold">${safeQty}</span>
-                                <button onclick="updateQty('${id}', 1)" ${!data.inStock ? "disabled" : ""}
-                                    class="${data.inStock ? "bg-green-600" : "bg-gray-400 cursor-not-allowed"} text-white px-3 py-1 rounded-lg font-bold">
-                                    ${data.inStock ? "+" : "Sold Out"}
-                                </button>
-                            </div>
-                        </div>
-                    `;
-                });
+                        `;
+                    });
 
-                Object.keys(menuItems).forEach((id) => {
-                    if (!activeIds.has(id)) delete menuItems[id];
-                });
-                recalculateTotal();
-            },
-            (err) => {
-                document.getElementById("shop-header").textContent = "Menu Error: " + err.code;
-            }
-        );
-
-        function recalculateTotal() {
-            let total = 0;
-            Object.values(menuItems).forEach((item) => {
-                total += item.qty * item.price;
-            });
-            document.getElementById("total-amount").innerText = total;
-            return total;
-        }
-
-        window.updateQty = (itemId, change) => {
-            if (!menuItems[itemId] || !menuItems[itemId].inStock) return;
-
-            document.getElementById("qr-box").classList.add("hidden");
-            document.getElementById("order-btn").classList.add("hidden");
-
-            let newQty = menuItems[itemId].qty + change;
-            if (newQty < 0) newQty = 0;
-            if (newQty > 10) newQty = 10;
-
-            menuItems[itemId].qty = newQty;
-            document.getElementById(`${itemId}-qty`).innerText = newQty;
-            recalculateTotal();
-        };
-
-        window.showUPI = () => {
-            const total = recalculateTotal();
-            if (total === 0) {
-                alert("Add items to your cart first!");
-                return;
-            }
-
-            const randomNum = Math.floor(Math.random() * 9000) + 1000;
-            currentOrderId = `${shopId.toUpperCase()}-${randomNum}`;
-
-            const upiLink = `upi://pay?pa=${shopConfig.upiId}&pn=${encodeURIComponent(shopConfig.name)}&am=${total}&cu=INR&tn=${currentOrderId}`;
-            const qrApi = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(upiLink)}`;
-
-            document.getElementById("qr-image").src = qrApi;
-            document.getElementById("qr-amount").innerText = total;
-            document.getElementById("upi-app-link").href = upiLink;
-
-            document.getElementById("txn-input").value = "";
-            document.getElementById("order-btn").classList.add("hidden");
-            document.getElementById("qr-box").classList.remove("hidden");
-        };
-
-        window.checkTxn = () => {
-            const input = document.getElementById("txn-input");
-            input.value = input.value.replace(/\D/g, "");
-            if (input.value.trim().length === 12) {
-                document.getElementById("order-btn").classList.remove("hidden");
-            } else {
-                document.getElementById("order-btn").classList.add("hidden");
-            }
-        };
-
-        window.placeOrder = () => {
-            const total = recalculateTotal();
-            const txnId = document.getElementById("txn-input").value.trim();
-
-            if (total === 0) {
-                alert("Please add at least one item first!");
-                return;
-            }
-
-            let bill = `${shopConfig.name} Order:\n`;
-            Object.values(menuItems).forEach((item) => {
-                if (item.qty > 0) {
-                    bill += `- ${item.name} x${item.qty} = ₹${item.qty * item.price}\n`;
+                    Object.keys(menuItems).forEach((id) => {
+                        if (!activeIds.has(id)) delete menuItems[id];
+                    });
+                    recalculateTotal();
+                },
+                (err) => {
+                    document.getElementById("shop-header").textContent = "Menu Error: " + err.code;
                 }
-            });
-            bill += `Total: ₹${total}`;
+            );
 
-            const url = `https://wa.me/${shopConfig.whatsapp}?text=${encodeURIComponent(bill + "\nOrder ID: " + currentOrderId + "\nUPI Ref: " + txnId)}`;
-            window.open(url, "_blank");
-        };
+            function recalculateTotal() {
+                let total = 0;
+                Object.values(menuItems).forEach((item) => {
+                    total += item.qty * item.price;
+                });
+                document.getElementById("total-amount").innerText = total;
+                return total;
+            }
+
+            window.updateQty = (itemId, change) => {
+                if (!menuItems[itemId] || !menuItems[itemId].inStock) return;
+
+                document.getElementById("qr-box").classList.add("hidden");
+                document.getElementById("order-btn").classList.add("hidden");
+
+                let newQty = menuItems[itemId].qty + change;
+                if (newQty < 0) newQty = 0;
+                if (newQty > 10) newQty = 10;
+
+                menuItems[itemId].qty = newQty;
+                document.getElementById(`${itemId}-qty`).innerText = newQty;
+                recalculateTotal();
+            };
+
+            window.showUPI = () => {
+                if (!shopConfig) return;
+                const total = recalculateTotal();
+                if (total === 0) {
+                    alert("Add items to your cart first!");
+                    return;
+                }
+
+                const randomNum = Math.floor(Math.random() * 9000) + 1000;
+                currentOrderId = `${shopId.toUpperCase()}-${randomNum}`;
+
+                const upiLink = `upi://pay?pa=${shopConfig.upiId}&pn=${encodeURIComponent(shopConfig.name)}&am=${total}&cu=INR&tn=${currentOrderId}`;
+                const qrApi = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(upiLink)}`;
+
+                document.getElementById("qr-image").src = qrApi;
+                document.getElementById("qr-amount").innerText = total;
+                document.getElementById("upi-app-link").href = upiLink;
+
+                document.getElementById("txn-input").value = "";
+                document.getElementById("order-btn").classList.add("hidden");
+                document.getElementById("qr-box").classList.remove("hidden");
+            };
+
+            window.checkTxn = () => {
+                const input = document.getElementById("txn-input");
+                input.value = input.value.replace(/\D/g, "");
+                if (input.value.trim().length === 12) {
+                    document.getElementById("order-btn").classList.remove("hidden");
+                } else {
+                    document.getElementById("order-btn").classList.add("hidden");
+                }
+            };
+
+            window.placeOrder = () => {
+                if (!shopConfig) return;
+                const total = recalculateTotal();
+                const txnId = document.getElementById("txn-input").value.trim();
+
+                if (total === 0) {
+                    alert("Please add at least one item first!");
+                    return;
+                }
+
+                let bill = `${shopConfig.name} Order:\n`;
+                Object.values(menuItems).forEach((item) => {
+                    if (item.qty > 0) {
+                        bill += `- ${item.name} x${item.qty} = ₹${item.qty * item.price}\n`;
+                    }
+                });
+                bill += `Total: ₹${total}`;
+
+                const url = `https://wa.me/${shopConfig.whatsapp}?text=${encodeURIComponent(bill + "\nOrder ID: " + currentOrderId + "\nUPI Ref: " + txnId)}`;
+                window.open(url, "_blank");
+            };
+        }
     </script>
 </body>
 </html>
